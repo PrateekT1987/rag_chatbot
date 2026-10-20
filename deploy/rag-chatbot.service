@@ -1,0 +1,28 @@
+# systemd unit for running the chatbot backend as a service.
+#
+# Install (adjust paths and user):
+#   sudo cp deploy/rag-chatbot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now rag-chatbot
+#   sudo systemctl status rag-chatbot
+#
+[Unit]
+Description=RAG Product Catalog Chatbot
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/opt/rag_chatbot
+Environment=PATH=/opt/rag_chatbot/.venv/bin
+ExecStart=/opt/rag_chatbot/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rag_chatbot
+
+[Install]
+WantedBy=multi-user.target

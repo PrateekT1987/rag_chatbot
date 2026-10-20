@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Acme Store — Demo (RAG Product Catalog Chatbot)</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: #1f2430; background: #fff;
+    }
+    header {
+      padding: 18px 5vw; display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid #eceef2;
+    }
+    header .logo {
+      width: 34px; height: 34px; border-radius: 9px; background: #4f46e5;
+      color: #fff; display: grid; place-items: center; font-weight: 800;
+    }
+    header b { font-size: 17px; }
+    main { max-width: 880px; margin: 0 auto; padding: 48px 5vw 120px; }
+    h1 { font-size: clamp(26px, 5vw, 40px); margin: 0 0 12px; letter-spacing: -0.02em; }
+    p.lead { font-size: 17px; color: #55607a; line-height: 1.6; max-width: 620px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px; margin-top: 36px; }
+    .tile { border: 1px solid #eceef2; border-radius: 14px; padding: 18px; }
+    .tile h3 { margin: 0 0 6px; font-size: 15px; }
+    .tile p { margin: 0; font-size: 13.5px; color: #667085; line-height: 1.5; }
+    .try {
+      margin-top: 40px; background: #f7f8fd; border: 1px dashed #c7c9f3;
+      border-radius: 14px; padding: 20px;
+    }
+    .try h2 { margin: 0 0 8px; font-size: 18px; }
+    .try p { margin: 0 0 10px; color: #55607a; font-size: 14.5px; }
+    .try code { background: #eceffb; padding: 2px 6px; border-radius: 6px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">A</div>
+    <b>Acme Store</b>
+  </header>
+
+  <main>
+    <h1>Demo storefront</h1>
+    <p class="lead">
+      This page shows the catalog chatbot widget embedded in a normal website.
+      Click the round button in the corner to open the chat, then ask about
+      prices, specifications, availability or comparisons between products.
+    </p>
+
+    <div class="grid">
+      <div class="tile"><h3>Accurate answers</h3><p>Responses are generated only from the product CSV — never invented.</p></div>
+      <div class="tile"><h3>Product cards</h3><p>Matched products appear as cards with SKU, price and availability.</p></div>
+      <div class="tile"><h3>Mobile friendly</h3><p>On phones the chat opens full-screen with safe-area support.</p></div>
+    </div>
+
+    <div class="try">
+      <h2>Embedding it on your own site</h2>
+      <p>Add a single script tag wherever you want the chat widget to appear:</p>
+      <p><code>&lt;script src="http://YOUR-SERVER:8000/widget.js" data-title="Store Assistant" async&gt;&lt;/script&gt;</code></p>
+      <p>Options: <code>data-api-url</code>, <code>data-title</code>, <code>data-subtitle</code>,
+         <code>data-color</code>, <code>data-position="left|right"</code>,
+         <code>data-suggestions="Q1;Q2"</code>.</p>
+    </div>
+  </main>
+
+  <!-- The entire integration: one script tag. -->
+  <script
+    src="/widget.js"
+    data-title="Acme Store Assistant"
+    data-subtitle="Ask about products, specs & pricing"
+    data-color="#4f46e5"
+    data-position="right"
+    async
+  ></script>
+</body>
+</html>

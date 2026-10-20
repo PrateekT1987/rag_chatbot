@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Release artifacts
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Client brief (local reference only)
+RAG ChatBot.txt
