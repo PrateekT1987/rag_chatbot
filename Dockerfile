@@ -15,8 +15,9 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # requirements.lock pins exact versions for reproducible production builds.
+# Generous retries keep builds reliable on slow/flaky networks.
 COPY requirements.lock .
-RUN pip install --no-cache-dir -r requirements.lock
+RUN pip install --no-cache-dir --retries 5 --timeout 60 -r requirements.lock
 
 COPY backend/ backend/
 COPY static/ static/
