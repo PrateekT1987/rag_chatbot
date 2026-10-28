@@ -4,10 +4,11 @@
 #   docker build -t rag-chatbot .
 #   docker run -p 8000:8000 --env-file .env -v ./data:/app/data rag-chatbot
 #
-# The base image is pinned by digest for reproducible builds. To update it:
-#   docker pull python:3.12-slim
-#   docker image inspect python:3.12-slim --format '{{index .RepoDigests 0}}'
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+# The base image is pinned by digest for reproducible builds and matches the
+# Python version requirements.lock was generated on (3.14). To update it:
+#   docker pull python:3.14-slim
+#   docker image inspect python:3.14-slim --format '{{index .RepoDigests 0}}'
+FROM python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
