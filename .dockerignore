@@ -1,0 +1,12 @@
+# Never send secrets or local state into the Docker build context.
+.env
+.venv/
+.git/
+.github/
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.zip
+RAG ChatBot.txt
+README.md

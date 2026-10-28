@@ -17,3 +17,6 @@ __pycache__/
 
 # Client brief (local reference only)
 RAG ChatBot.txt
+
+# Local Upwork upload staging
+upwork/

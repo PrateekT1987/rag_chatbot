@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 
 from .catalog import Catalog
 from .config import Settings
@@ -97,6 +98,7 @@ class RagPipeline:
     # -- public -----------------------------------------------------------
 
     async def answer(self, request: ChatRequest) -> ChatResponse:
+        started = time.perf_counter()
         hits = self._retrieve(request)
 
         # Guard 1: nothing relevant enough -> refuse without calling the LLM.
@@ -104,17 +106,25 @@ class RagPipeline:
             contact = ""
             if self.settings.fallback_contact:
                 contact = " You can also " + self.settings.fallback_contact + "."
-            return ChatResponse(
-                answer=FALLBACK_ANSWER.format(contact=contact),
-                fallback=True,
-                products=[],
+            return self._finish(
+                ChatResponse(
+                    answer=FALLBACK_ANSWER.format(contact=contact),
+                    fallback=True,
+                    products=[],
+                ),
+                hits,
+                started,
             )
 
         cards = [self._to_card(h) for h in hits[:3]]
 
         # No LLM configured: answer from retrieved rows directly.
         if not self.llm.available:
-            return ChatResponse(answer=_no_llm_answer(hits), products=cards)
+            return self._finish(
+                ChatResponse(answer=_no_llm_answer(hits), products=cards),
+                hits,
+                started,
+            )
 
         prompt = self._build_prompt(request, hits)
         try:
@@ -122,17 +132,37 @@ class RagPipeline:
         except LLMError as exc:
             # Guard 2: LLM outage -> degrade to listing matched products.
             log.error("LLM failure, degrading to catalog list: %s", exc)
-            return ChatResponse(
-                answer=_no_llm_answer(hits)
-                + "\n\n(I couldn't reach the answer service just now, "
-                  "so here are the matching products directly.)",
-                products=cards,
+            return self._finish(
+                ChatResponse(
+                    answer=_no_llm_answer(hits)
+                    + "\n\n(I couldn't reach the answer service just now, "
+                      "so here are the matching products directly.)",
+                    products=cards,
+                ),
+                hits,
+                started,
             )
 
         answer = self._sku_guard(answer)
-        return ChatResponse(answer=answer, products=cards)
+        return self._finish(
+            ChatResponse(answer=answer, products=cards), hits, started
+        )
 
     # -- internal ---------------------------------------------------------
+
+    @staticmethod
+    def _finish(response: ChatResponse, hits: list[ScoredProduct],
+                started: float) -> ChatResponse:
+        """One structured log line per chat request for monitoring."""
+        top = hits[0].score if hits else 0.0
+        log.info(
+            "chat outcome fallback=%s top_score=%.3f products=%d latency_ms=%.0f",
+            response.fallback,
+            top,
+            len(response.products),
+            (time.perf_counter() - started) * 1000,
+        )
+        return response
 
     def _retrieve(self, request: ChatRequest) -> list[ScoredProduct]:
         k = self.settings.top_k

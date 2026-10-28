@@ -1,5 +1,7 @@
 # RAG Product Catalog Chatbot
 
+[![tests](https://github.com/PrateekT1987/rag_chatbot/actions/workflows/tests.yml/badge.svg)](https://github.com/PrateekT1987/rag_chatbot/actions/workflows/tests.yml)
+
 A lightweight Retrieval-Augmented Generation chatbot that answers customer
 questions (pricing, specs, availability, SKUs, comparisons) from a product
 CSV — with strict guards against hallucinated answers.
@@ -61,14 +63,16 @@ list with comments). Highlights:
 |---|---|---|
 | `LLM_API_KEY` | — | Enables generated answers. Also used by `RETRIEVER=openai`. |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint. |
-| `LLM_MODEL` | `gpt-4o-mini` | Chat model name. |
+| `LLM_MODEL` | `gpt-4o-mini` | Chat model name. Use a paid model with an SLA in production (free tiers are rate-limited and can disappear). |
+| `LLM_MAX_TOKENS` | `400` | Cap on answer length — protects latency and cost. |
+| `LLM_MAX_RETRIES` | `2` | Retries on transient LLM failures (429 / 5xx / network) with exponential backoff. |
 | `CATALOG_PATH` | `data/products.csv` | Location of the product CSV. |
 | `RETRIEVER` | `tfidf` | `tfidf` (no infrastructure) or `openai` (embeddings). |
 | `TOP_K` | `4` | How many products the LLM sees per question. |
 | `RELEVANCE_THRESHOLD` | `0.10` | Below this similarity the bot refuses (fallback) instead of guessing. |
-| `CORS_ORIGINS` | `*` | Comma-separated site origins allowed to call the API. |
+| `CORS_ORIGINS` | *(empty)* | Comma-separated site origins allowed to call the API. Empty = same-origin only (safe default). |
 | `RATE_LIMIT_PER_MINUTE` | `30` | Per-IP limit on `/api/chat` (0 disables). |
-| `ADMIN_TOKEN` | — | If set, required as `X-Admin-Token` for `POST /api/reindex`. |
+| `ADMIN_TOKEN` | — | If set, required as `X-Admin-Token` for `POST /api/reindex`. If unset, reindex is localhost-only. |
 | `FALLBACK_CONTACT` | — | e.g. `email sales@example.com` — appended to fallback answers. |
 
 Secrets stay server-side: the widget only ever calls `/api/chat` on your
@@ -157,7 +161,7 @@ is genuinely relevant — the LLM's job is reading and phrasing, not finding.
 .venv/bin/python -m pytest
 ```
 
-29 tests, no network or API key required:
+36 tests, no network or API key required:
 
 - `tests/test_retriever.py` — **accuracy**: 25 real customer questions must
   retrieve the correct product family above the threshold (price, spec,
@@ -167,7 +171,11 @@ is genuinely relevant — the LLM's job is reading and phrasing, not finding.
   zero LLM calls; hallucinated-SKU caution note; LLM-outage degradation;
   no-LLM mode; follow-up retrieval via history.
 - `tests/test_api.py` — endpoints, validation, rate limiting, admin token,
-  CORS, widget/demo serving, broken-CSV safety.
+  CORS (including the restrictive default), widget/demo serving,
+  broken-CSV safety, localhost-only reindex.
+- `tests/test_llm.py` — LLM hardening: `max_tokens` in every request,
+  retry on 429/5xx, no retry on auth errors, give-up after max retries,
+  empty-response handling.
 
 When you swap in your own CSV, run the accuracy tests and adjust
 `ACCURACY_CASES` (in `tests/test_retriever.py`) to your products — it doubles
@@ -183,14 +191,15 @@ docker compose up -d --build
 ```
 
 The `data/` directory is bind-mounted, so CSV edits apply instantly without
-rebuilding.
+rebuilding. The image installs `requirements.lock` (exact versions) on a
+digest-pinned base image for reproducible builds.
 
 ### Option B — systemd + uvicorn
 
 ```bash
 sudo rsync -a --exclude .venv ./ /opt/rag_chatbot/
 cd /opt/rag_chatbot && sudo python3 -m venv .venv
-sudo .venv/bin/pip install -r requirements.txt
+sudo .venv/bin/pip install -r requirements.lock
 sudo cp .env.example /opt/rag_chatbot/.env && sudo nano /opt/rag_chatbot/.env
 sudo cp deploy/rag-chatbot.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now rag-chatbot
@@ -206,18 +215,51 @@ yourstore.com {
 }
 ```
 
-or nginx with certbot. Then set `CORS_ORIGINS` to your real site origin(s)
-instead of `*`, and serve your site over the same domain to keep everything
-first-party.
+or nginx with certbot. Then set `CORS_ORIGINS` to your real site origin(s),
+and serve your site over the same domain to keep everything first-party.
 
 ### Production checklist
 
 - [ ] `LLM_API_KEY` set in `.env`, file permissions `chmod 600 .env`
-- [ ] `CORS_ORIGINS` restricted to your site(s)
-- [ ] `ADMIN_TOKEN` set (protects `/api/reindex`)
-- [ ] HTTPS via reverse proxy
+- [ ] **Paid model with an SLA** in `LLM_MODEL` (not a `:free` tier)
+- [ ] `LLM_MAX_TOKENS` set (default 400) to cap cost/latency
+- [ ] `CORS_ORIGINS` restricted to your site(s) — never `*`
+- [ ] `ADMIN_TOKEN` set (otherwise reindex is localhost-only)
+- [ ] HTTPS via reverse proxy, with `--proxy-headers` so rate limiting sees real client IPs
 - [ ] `RATE_LIMIT_PER_MINUTE` appropriate (default 30/min per IP)
+- [ ] `pip install -r requirements.lock` for reproducible builds
+- [ ] CI green on GitHub Actions (`.github/workflows/tests.yml`)
 - [ ] Log monitoring (`journalctl -u rag-chatbot` or `docker logs`)
+
+### Observability
+
+Every chat request emits one structured log line:
+
+```
+chat outcome fallback=False top_score=0.447 products=3 latency_ms=812
+```
+
+Track these four signals in your log platform:
+
+| Signal | Healthy | Action if unhealthy |
+|---|---|---|
+| `fallback=True` rate | < 20% | Catalog gaps or threshold too high |
+| `latency_ms` p95 | < 3s | Check LLM provider latency / `LLM_TIMEOUT_SECONDS` |
+| LLM errors (`LLM failure` log) | near 0 | Provider outage or key/quota issue |
+| 429 rate | low | Raise limit or add proxy-level limiting |
+
+LLM calls retry automatically (`LLM_MAX_RETRIES`, exponential backoff) on
+429/5xx/network errors; auth errors fail fast and degrade gracefully.
+
+### Data & privacy
+
+- Customer messages and matched catalog rows are sent to your LLM provider
+  (OpenAI/OpenRouter/…). Disclose this in your privacy policy.
+- The backend stores **no** conversations, accounts or PII — history is held
+  only in the visitor's browser and sent per request.
+- API keys live only in `.env` on the server; the widget never receives them.
+- The LLM has no tools or actions, so prompt-injection attempts can only
+  produce misleading text — never execute code or change data.
 
 ## 8. Maintenance
 
@@ -246,7 +288,7 @@ workers/hosts, use the reverse proxy's rate limiting instead.
 |---|---|
 | `POST /api/chat` | Body `{"message": "...", "history": [{"role": "user", "content": "..."}]}` → `{"answer", "fallback", "products": [...]}` |
 | `GET /api/products` | Full catalog as JSON |
-| `POST /api/reindex` | Reload CSV + rebuild index (optional `X-Admin-Token`) |
+| `POST /api/reindex` | Reload CSV + rebuild index (`X-Admin-Token` if set; localhost-only otherwise) |
 | `GET /health` | Status, product count, LLM config |
 | `GET /widget.js` · `GET /` | Widget script · demo page |
 
@@ -269,13 +311,17 @@ backend/
   rag.py        Pipeline: retrieve → threshold → prompt → generate → SKU guard
   retriever.py  TF-IDF index (default) + optional OpenAI embeddings index
   catalog.py    CSV loading, validation, hot reload
-  llm.py        OpenAI-compatible chat client
+  llm.py        OpenAI-compatible chat client (retries, output cap)
   config.py     .env / environment settings
   models.py     Pydantic schemas
 data/products.csv      54 sample products — replace with your catalog
 static/chat-widget.js  Self-contained widget (embedded CSS, no deps)
 static/demo.html       Demo storefront embedding the widget
-tests/                 Accuracy, fallback and API tests (29 tests)
+tests/                 Accuracy, fallback, API and LLM-client tests (36 tests)
 deploy/                systemd unit
-Dockerfile, docker-compose.yml
+.github/workflows/     CI: pytest on push and pull request
+Dockerfile, docker-compose.yml, .dockerignore
+requirements.txt       Ranges for development
+requirements.lock      Exact pins for production builds
+LICENSE                MIT
 ```

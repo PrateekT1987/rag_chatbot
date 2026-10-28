@@ -136,3 +136,23 @@ def test_cors_allows_configured_origin():
             "/health", headers={"Origin": "https://shop.example.com"}
         )
     assert res.headers.get("access-control-allow-origin") == "https://shop.example.com"
+
+
+def test_no_cors_headers_when_origins_empty():
+    """Default is restrictive: no cross-origin access unless configured."""
+    with build_client(cors_origins=[]) as client:
+        res = client.get("/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in res.headers
+
+
+def test_reindex_restricted_to_localhost_without_token():
+    """Without ADMIN_TOKEN, reindex must not be reachable remotely."""
+    settings = Settings()
+    settings.catalog_path = Path(CATALOG_CSV)
+    settings.admin_token = ""
+    app = create_app(settings=settings, llm=FakeLLM())
+    with TestClient(app, client=("203.0.113.9", 40000)) as client:
+        res = client.post("/api/reindex")
+    assert res.status_code == 403
+    assert "localhost" in res.json()["detail"]
+

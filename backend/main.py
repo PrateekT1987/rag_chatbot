@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+import hmac
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 
@@ -97,6 +98,18 @@ def create_app(
     app.state.index = index
     app.state.pipeline = pipeline
 
+    # Warn loudly about insecure defaults so they get fixed before go-live.
+    if "*" in settings.cors_origins:
+        log.warning(
+            "CORS is open to all origins ('*'). Restrict CORS_ORIGINS to your "
+            "site(s) before production."
+        )
+    if not settings.admin_token:
+        log.warning(
+            "ADMIN_TOKEN is not set: POST /api/reindex is restricted to "
+            "localhost. Set ADMIN_TOKEN to allow remote reindexing."
+        )
+
     async def enforce_rate_limit(request: Request) -> None:
         client_ip = request.client.host if request.client else "unknown"
         if not limiter.check(client_ip):
@@ -105,11 +118,24 @@ def create_app(
                 detail="Too many requests. Please wait a moment and try again.",
             )
 
-    def require_admin(x_admin_token: str = Header(default="")) -> None:
-        if not settings.admin_token:
-            return  # admin endpoint disabled when no token is configured
-        if x_admin_token != settings.admin_token:
-            raise HTTPException(status_code=401, detail="Invalid admin token.")
+    def require_admin(
+        request: Request, x_admin_token: str = Header(default="")
+    ) -> None:
+        if settings.admin_token:
+            # Constant-time comparison avoids leaking the token via timing.
+            if not hmac.compare_digest(x_admin_token, settings.admin_token):
+                raise HTTPException(status_code=401, detail="Invalid admin token.")
+            return
+        # Safe default: with no token configured, reindex is localhost-only.
+        client_host = request.client.host if request.client else ""
+        if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Reindex is restricted to localhost. Set ADMIN_TOKEN to "
+                    "enable remote reindexing."
+                ),
+            )
 
     # -- routes -------------------------------------------------------------
 

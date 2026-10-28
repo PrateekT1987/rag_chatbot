@@ -51,6 +51,10 @@ class Settings:
     llm_model: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     llm_temperature: float = _env_float("LLM_TEMPERATURE", 0.1)
     llm_timeout_seconds: float = _env_float("LLM_TIMEOUT_SECONDS", 30.0)
+    # Cap on generated answer length — protects latency and cost.
+    llm_max_tokens: int = _env_int("LLM_MAX_TOKENS", 400)
+    # Extra attempts for transient LLM failures (429 / 5xx / network).
+    llm_max_retries: int = _env_int("LLM_MAX_RETRIES", 2)
 
     # --- Retrieval -------------------------------------------------------
     # "tfidf" (default, zero infrastructure) or "openai" (embeddings API).
@@ -70,7 +74,7 @@ class Settings:
     cors_origins: list[str] = field(
         default_factory=lambda: [
             o.strip()
-            for o in os.getenv("CORS_ORIGINS", "*").split(",")
+            for o in os.getenv("CORS_ORIGINS", "").split(",")
             if o.strip()
         ]
     )
